@@ -14,6 +14,7 @@ drop_rate = 0.2
 drop_rates = [0, 0.2, 0, 0.3, 0, 0.4, 0, 0, 0.5, 0, 0, 0.5, 0, 0, 0.5,
               0, 0, 0.5]
 
+SIGMA = 0.3
 
 class Cell():
     def __init__(self, id):
@@ -197,6 +198,7 @@ class CNN(nn.Module):
                             quan_paras[cell.id]['weight_num_int_bits'],
                             quan_paras[cell.id]['weight_num_frac_bits'],
                             signed=True)
+                noise = torch.rand_like(weight) * weight.abs().max() * SIGMA
                 bias = quantize(
                         bias,
                         quan_paras[cell.id]['weight_num_int_bits'],
@@ -204,7 +206,7 @@ class CNN(nn.Module):
                         signed=True
                         )
                 stride = conv.stride
-                x = F.conv2d(x, weight, bias, stride=stride)
+                x = F.conv2d(x, weight + noise, bias, stride=stride)
                 x = quantize(
                     x,
                     quan_paras[cell.id]['act_num_int_bits'],
@@ -221,12 +223,14 @@ class CNN(nn.Module):
             x = drop(x)
             output.append(x)
         x = x.view(x.size(0), -1)
-        x = self.fc1(x)
+        noise1 = torch.rand_like(self.fc1.weight) * self.fc1.weight.data.abs().max() * SIGMA
+        x = F.linear(x, self.fc1.weight + noise1, self.fc1.bias)
         x = F.relu(x)
         if self.do_bn is True:
             x = self.fc_bn(x)
         x = nn.Dropout(p=0.5)(x)
-        x = self.fc2(x)
+        noise2 = torch.rand_like(self.fc2.weight) * self.fc2.weight.data.abs().max() * SIGMA
+        x = F.linear(x, self.fc2.weight + noise2, self.fc2.bias)
         return x
 
     def quantize_weight(self, num_int_bits, num_frac_bits):
