@@ -86,6 +86,18 @@ parser.add_argument(
     default=False,
     help="something"
     )
+parser.add_argument(
+    '-gt', '--test_gt',
+    type=bool,
+    default=False,
+    help="something"
+    )
+parser.add_argument(
+    '--mode',
+    default='nas',
+    choices=['nas', 'joint', 'nested', 'quantization'],
+    help="supported dataset including : 1. nas (default), 2. joint"
+    )
 args = parser.parse_args()
 
 
@@ -115,7 +127,18 @@ def main():
         )
     if os.path.exists(dir) is False:
         os.makedirs(dir)
-    sync_search(device, dir)
+    SCRIPT[args.mode](device, dir)
+
+def generate_legnth(space: dict):
+    length = []
+    for key in space:
+        length.append(len(space[key]))
+    length = [length] * args.layers
+    length = np.array(length)
+    length = length.reshape(-1)
+    length = length.tolist()
+    return length
+
 
 def generate_hot(r, length):
     hot = []
@@ -125,7 +148,7 @@ def generate_hot(r, length):
         hot += this
     return hot
 
-def sync_search(device, dir='experiment'):
+def nas(device, dir='experiment'):
     if os.path.exists(dir) is False:
         os.makedirs(dir)
     filepath = os.path.join(dir, f"joint ({args.episodes} episodes)")
@@ -143,22 +166,11 @@ def sync_search(device, dir='experiment'):
     logger.info(f"architecture space: ")
     for name, value in ARCH_SPACE.items():
         logger.info(name + f": \t\t\t\t {value}")
-    logger.info(f"quantization space: ")
-    for name, value in QUAN_SPACE.items():
-        logger.info(name + f": \t\t\t {value}")
-    agent = Agent({**ARCH_SPACE, **QUAN_SPACE}, args.layers,
+    length = generate_legnth(ARCH_SPACE)
+    agent = Agent(ARCH_SPACE, args.layers,
                   lr=args.learning_rate,
                   device=torch.device('cpu'), skip=False)
-    length = []
-    for key in ARCH_SPACE:
-        length.append(len(ARCH_SPACE[key]))
-    for key in QUAN_SPACE:
-        length.append(len(QUAN_SPACE[key]))
-    length = [length] * args.layers
-    length = np.array(length)
-    # length = length.transpose()
-    length = length.reshape(-1)
-    length = length.tolist()
+    
     train_data, val_data = data.get_data(
         args.dataset, device, shuffle=True,
         batch_size=args.batch_size, augment=True)
@@ -200,6 +212,14 @@ def sync_search(device, dir='experiment'):
             y.append(reward)
         if args.estimate and e >= args.train_episode:
             reward = clf.predict([XX])[0]
+            if args.test_gt:
+                model, optimizer = child.get_model(
+                    input_shape, arch_paras, num_classes, device,
+                    multi_gpu=False, do_bn=False)
+                _, GT_reward = backend.fit(
+                    model, optimizer, train_data, val_data, quan_paras=quan_paras,
+                    epochs=args.epochs, verbosity=args.verbosity)
+                logger.info(f"GT Reward: {GT_reward}, ")
 
         agent.store_rollout(rollout, reward)
         end = time.time()
@@ -224,6 +244,110 @@ def sync_search(device, dir='experiment'):
     logger.info(f"Total elasped time: {total_time}")
     logger.info(f"Best samples: {best_samples}")
     csvfile.close()
+
+def sync_search(device, dir='experiment'):
+    if os.path.exists(dir) is False:
+        os.makedirs(dir)
+    filepath = os.path.join(dir, f"joint ({args.episodes} episodes)")
+    logger = get_logger(filepath)
+    csvfile = open(filepath+'.csv', mode='w+', newline='')
+    writer = csv.writer(csvfile)
+    logger.info(f"INFORMATION")
+    logger.info(f"mode: \t\t\t\t\t {'joint'}")
+    logger.info(f"dataset: \t\t\t\t {args.dataset}")
+    logger.info(f"number of child network layers: \t {args.layers}")
+    logger.info(f"training epochs: \t\t\t {args.epochs}")
+    logger.info(f"batch size: \t\t\t\t {args.batch_size}")
+    logger.info(f"controller learning rate: \t\t {args.learning_rate}")
+    logger.info(f"architecture episodes: \t\t\t {args.episodes}")
+    logger.info(f"architecture space: ")
+    for name, value in ARCH_SPACE.items():
+        logger.info(name + f": \t\t\t\t {value}")
+    logger.info(f"quantization space: ")
+    for name, value in QUAN_SPACE.items():
+        logger.info(name + f": \t\t\t {value}")
+    agent = Agent({**ARCH_SPACE, **QUAN_SPACE}, args.layers,
+                  lr=args.learning_rate,
+                  device=torch.device('cpu'), skip=False)
+    length = generate_legnth({**ARCH_SPACE, **QUAN_SPACE})
+    train_data, val_data = data.get_data(
+        args.dataset, device, shuffle=True,
+        batch_size=args.batch_size, augment=True)
+    input_shape, num_classes = data.get_info(args.dataset)
+    writer.writerow(["ID"] +
+                    ["Layer {}".format(i) for i in range(args.layers)] +
+                    ["Accuracy"] +
+                    ["Partition (Tn, Tm)", "Partition (#LUTs)",
+                    "Partition (#cycles)", "Total LUT", "Total Throughput"] +
+                    ["Time"])
+    child_id, total_time = 0, 0
+    logger.info('=' * 50 +
+                "Start exploring architecture & quantization space" + '=' * 50)
+    best_samples = BestSamples(5)
+    X = []
+    y = []
+    clf = RandomForestRegressor()
+    for e in range(args.episodes):
+        logger.info('-' * 130)
+        child_id += 1
+        start = time.time()
+        rollout, paras = agent.rollout()
+        logger.info("Sample Architecture ID: {}, Sampled actions: {}".format(
+                    child_id, rollout))
+        arch_paras, quan_paras = utility.split_paras(paras)
+        XX = generate_hot(rollout, length)
+
+        if args.estimate and e == args.train_episode:
+            clf.fit(X, y)
+
+        if (not args.estimate) or e < args.train_episode:
+            model, optimizer = child.get_model(
+                input_shape, arch_paras, num_classes, device,
+                multi_gpu=False, do_bn=False)
+            _, reward = backend.fit(
+                model, optimizer, train_data, val_data, quan_paras=quan_paras,
+                epochs=args.epochs, verbosity=args.verbosity)
+            X.append(XX)
+            y.append(reward)
+        if args.estimate and e >= args.train_episode:
+            reward = clf.predict([XX])[0]
+            if args.test_gt:
+                model, optimizer = child.get_model(
+                    input_shape, arch_paras, num_classes, device,
+                    multi_gpu=False, do_bn=False)
+                _, GT_reward = backend.fit(
+                    model, optimizer, train_data, val_data, quan_paras=quan_paras,
+                    epochs=args.epochs, verbosity=args.verbosity)
+                logger.info(f"GT Reward: {GT_reward}, ")
+
+        agent.store_rollout(rollout, reward)
+        end = time.time()
+        ep_time = end - start
+        total_time += ep_time
+        best_samples.register(child_id, rollout, reward)
+        writer.writerow(
+            [child_id] +
+            [str(paras[i]) for i in range(args.layers)] +
+            [reward] + [ep_time]
+            )
+        logger.info(f"Reward: {reward}, " +
+                    f"Elasped time: {ep_time}, " +
+                    f"Average time: {total_time/(e+1)}")
+        logger.info(f"Best Reward: {best_samples.reward_list[0]}, " +
+                    f"ID: {best_samples.id_list[0]}, " +
+                    f"Rollout: {best_samples.rollout_list[0]}")
+    logger.info(
+        '=' * 50 +
+        "Architecture & quantization sapce exploration finished" +
+        '=' * 50)
+    logger.info(f"Total elasped time: {total_time}")
+    logger.info(f"Best samples: {best_samples}")
+    csvfile.close()
+
+SCRIPT = {
+    'nas': nas,
+    'joint': sync_search,
+}
 
 if __name__ == '__main__':
     import random

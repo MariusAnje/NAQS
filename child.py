@@ -214,7 +214,10 @@ class CNN(nn.Module):
                     signed=False
                     )
             else:
-                x = conv(x)
+                weight, bias = conv.weight, conv.bias
+                noise = torch.rand_like(weight) * weight.abs().max() * SIGMA
+                stride = conv.stride
+                x = F.conv2d(x, weight + noise, bias, stride=stride)
             x = F.relu(x)
             if self.do_bn is True:
                 bn = getattr(self, 'bn_{}'.format(cell.id))
@@ -262,7 +265,8 @@ def get_model(input_shape, paras, num_classes, device=torch.device('cpu'),
     if device.type != 'cpu' and multi_gpu is True:
         print("using parallel data")
         model = torch.nn.DataParallel(model)
-    return model.to(device), get_optimizer(model, 'SGD')
+    # return model.to(device), get_optimizer(model, 'SGD')
+    return model.to(device), get_optimizer(model, 'Adam')
 
 
 def get_optimizer(model, name='SGD'):
@@ -276,7 +280,7 @@ def get_optimizer(model, name='SGD'):
         )
     sgd_optim = optim.SGD(
         model.parameters(),
-        lr=0.01,
+        lr=0.001,
         momentum=0.9,
         weight_decay=5e-4,
         nesterov=True)

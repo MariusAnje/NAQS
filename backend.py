@@ -38,8 +38,8 @@ def fit(model, optimizer=None, train_data=None, val_data=None, epochs=40,
             loss.append(val_loss)
         if verbosity > 0:
             print(f"Elasped time: {timer.sample()}")
-        # if epoch == 10 and val_data is not None and val_acc < 0.12:
-        #     break
+        if epoch == 10 and val_data is not None and val_acc < 0.12:
+            break
     if len(acc) > 4:
         return np.mean(loss[-5:]), np.mean(acc[-5:])  # train and validate
     elif len(acc) == 0:
