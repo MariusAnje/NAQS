@@ -59,17 +59,25 @@ def combine_rollout(arch_rollout, quan_rollout, num_layers):
 class BestSamples(object):
     def __init__(self, length=5):
         self.length = length
-        self.id_list = list(range(1, self.length+1))
-        self.rollout_list = [[]] * self.length
-        self.reward_list = [-1] * self.length
+        self.id_list = [i for i in range(length)]
+        self.rollout_list = [[] for _ in range(length)]
+        self.reward_list = [-1 for _ in range(length)]
 
     def register(self, id, rollout, reward):
         for i in range(self.length):
             if reward > self.reward_list[i]:
-                self.reward_list[i] = reward
-                self.id_list[i] = id
-                self.rollout_list[i] = rollout
+                self.id_list = self.insert(id, self.id_list, i)
+                self.rollout_list = self.insert(rollout, self.rollout_list, i)
+                self.reward_list = self.insert(reward, self.reward_list, i)
                 break
+    
+    def insert(self, data, t_list, index):
+        if index >= len(t_list):
+            return t_list
+        else:
+            t_list = t_list[:-1]
+            t_list = t_list[:index] + [data] + t_list[index:]
+            return t_list
 
     def __repr__(self):
         return str(dict(zip(self.id_list, self.reward_list)))
