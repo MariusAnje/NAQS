@@ -105,7 +105,6 @@ parser.add_argument(
     help="Optimizer used, just an indicator, no effecct, please edit the code to change"
     )
 args = parser.parse_args()
-print(args)
 
 
 def get_logger(filepath=None):
@@ -174,6 +173,7 @@ def nas(device, dir='experiment'):
     for name, value in ARCH_SPACE.items():
         logger.info(name + f": \t\t\t\t {value}")
     length = generate_legnth(ARCH_SPACE)
+    logger.info(args)
     agent = Agent(ARCH_SPACE, args.layers,
                   lr=args.learning_rate,
                   device=torch.device('cpu'), skip=False)
@@ -274,6 +274,7 @@ def sync_search(device, dir='experiment'):
     logger.info(f"quantization space: ")
     for name, value in QUAN_SPACE.items():
         logger.info(name + f": \t\t\t {value}")
+    logger.info(args)
     agent = Agent({**ARCH_SPACE, **QUAN_SPACE}, args.layers,
                   lr=args.learning_rate,
                   device=torch.device('cpu'), skip=False)
