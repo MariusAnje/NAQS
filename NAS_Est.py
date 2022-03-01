@@ -98,8 +98,14 @@ parser.add_argument(
     choices=['nas', 'joint', 'nested', 'quantization'],
     help="supported dataset including : 1. nas (default), 2. joint"
     )
+parser.add_argument(
+    '-opt', '--optimizer',
+    default='Adam',
+    choices=['Adam', 'SGD'],
+    help="Optimizer used, just an indicator, no effecct, please edit the code to change"
+    )
 args = parser.parse_args()
-
+print(args)
 
 
 def get_logger(filepath=None):
@@ -151,18 +157,19 @@ def generate_hot(r, length):
 def nas(device, dir='experiment'):
     if os.path.exists(dir) is False:
         os.makedirs(dir)
-    filepath = os.path.join(dir, f"joint ({args.episodes} episodes)")
+    filepath = os.path.join(dir, f"nas ({args.episodes} episodes)")
     logger = get_logger(filepath)
     csvfile = open(filepath+'.csv', mode='w+', newline='')
     writer = csv.writer(csvfile)
     logger.info(f"INFORMATION")
-    logger.info(f"mode: \t\t\t\t\t {'joint'}")
+    logger.info(f"mode: \t\t\t\t\t {'nas'}")
     logger.info(f"dataset: \t\t\t\t {args.dataset}")
     logger.info(f"number of child network layers: \t {args.layers}")
     logger.info(f"training epochs: \t\t\t {args.epochs}")
     logger.info(f"batch size: \t\t\t\t {args.batch_size}")
     logger.info(f"controller learning rate: \t\t {args.learning_rate}")
     logger.info(f"architecture episodes: \t\t\t {args.episodes}")
+    logger.info(f"use estimation method: \t\t\t {args.estimate}")
     logger.info(f"architecture space: ")
     for name, value in ARCH_SPACE.items():
         logger.info(name + f": \t\t\t\t {value}")
@@ -260,6 +267,7 @@ def sync_search(device, dir='experiment'):
     logger.info(f"batch size: \t\t\t\t {args.batch_size}")
     logger.info(f"controller learning rate: \t\t {args.learning_rate}")
     logger.info(f"architecture episodes: \t\t\t {args.episodes}")
+    logger.info(f"use estimation method: \t\t\t {args.estimate}")
     logger.info(f"architecture space: ")
     for name, value in ARCH_SPACE.items():
         logger.info(name + f": \t\t\t\t {value}")
