@@ -94,7 +94,8 @@ class Agent():
                     action = torch.multinomial(pi, 1)
                     x = action
                     rollout.append(action.item())
-        return rollout, self._format_rollout(rollout)
+        # return rollout, self._format_rollout(rollout)
+        return rollout, 0
 
     def forward(self):
         rollout_list = [torch.tensor(v).to(self.device)

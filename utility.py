@@ -88,7 +88,7 @@ class BestSamples(object):
             heapq.heappushpop(self.scores, [reward, id, rollout])
     
     def best_reward(self):
-        return self.scores[-1]
+        return max(self.scores)
 
     def __repr__(self):
         return str(dict(zip([s[1] for s in self.scores[::-1]], [s[0] for s in self.scores[::-1]])))
