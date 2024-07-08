@@ -12,6 +12,7 @@ from utility import BestSamples
 import utility
 import numpy as np
 from circuits import Multiplier
+import circuit_utils
 
 
 # def get_args():
@@ -112,10 +113,12 @@ def nas(device, dir='experiment'):
     logger.info(f"number of layers: \t\t\t {args.layers}")
     logger.info(f"architecture space: ")
 
-    NODE_SPACE = {"nodes": tuple(range(args.nodes * 2 + 2))}
-    agent = Agent(NODE_SPACE, args.layers * args.nodes * 2,
-                  lr=args.learning_rate,
-                  device=torch.device('cpu'), non_linear=args.skip)
+    # NODE_SPACE = {"nodes": tuple(range(args.nodes * 2 + 2))}
+    # agent = Agent(NODE_SPACE, args.layers * args.nodes * 2,
+    #               lr=args.learning_rate,
+    #               device=torch.device('cpu'), non_linear=args.skip)
+    circuit = Multiplier(2, 1, args.nodes, args.layers)
+    agent = circuit.generate_agent(lr=args.learning_rate)
 
     arch_id, total_time = 0, 0
     logger.info('=' * 50 + "Start exploring architecture space" + '=' * 50)
@@ -128,7 +131,6 @@ def nas(device, dir='experiment'):
         arch_rollout, arch_paras = agent.rollout()
         # logger.info("Sample Architecture ID: {}, Sampled actions: {}".format(
         #             arch_id, arch_rollout))
-        circuit = Multiplier(2, 1, args.nodes, args.layers)
         arch_reward = circuit.rollout_to_reward(arch_rollout)
         arch_reward = arch_reward[0]
         agent.store_rollout(arch_rollout, arch_reward)
@@ -148,6 +150,14 @@ def nas(device, dir='experiment'):
         '=' * 50 + "Architecture sapce exploration finished" + '=' * 50)
     logger.info(f"Total elasped time: {total_time}")
     logger.info(f"Best samples: {best_samples}")
+
+    b_reward = best_samples.best_reward()
+    arch_rollout = b_reward[2]
+    output = circuit.prop(arch_rollout)
+    output = circuit.output_process(output)
+    output_num = circuit_utils.bin_to_dec(output)
+    print(output_num)
+    print(circuit.ground_truth)
 
 if __name__ == '__main__':
     import random

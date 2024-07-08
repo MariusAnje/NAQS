@@ -69,7 +69,7 @@ class Agent():
 
         self.model = PolicyNetwork(tuple(len(v) for v in self.para_values),
                                    para_repeat).to(device)
-        self.optimizer = optim.SGD(self.model.parameters(), lr)
+        self.optimizer = optim.SGD(self.model.parameters(), lr, momentum=0.9)
         # self.optimizer = optim.RMSprop(self.model.parameters(), 0.005)
         self.initial_h = torch.randn(num_layers, 1, hidden_size).to(device)
         self.initial_c = torch.randn(num_layers, 1, hidden_size).to(device)
