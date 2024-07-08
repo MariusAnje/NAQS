@@ -4,3 +4,4 @@ backup/
 .ipynb*
 data/
 debug*
+experiment/

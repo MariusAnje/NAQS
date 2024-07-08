@@ -9,12 +9,12 @@ import utility
 import controller as ctrl
 
 
-def get_target(para_space, num_layers, skip=True):
+def get_target(para_space, num_layers, non_linear=True):
     _, para_values = zip(*para_space.items())
     num_choices = [len(v) for v in para_values]
     target = []
     for i in range(num_layers):
-        if skip:
+        if non_linear:
             target_anchor = []
             for j in range(i):
                 target_anchor.append(random.randint(0, 1))
@@ -60,7 +60,7 @@ def plot(reward_history):
     plt.show()
 
 
-def controller_bench(space, num_layers, device=torch.device('cpu'), skip=True,
+def controller_bench(space, num_layers, device=torch.device('cpu'), non_linear=True,
                      epochs=200):
     lr = 0.2
     batch_size = 5
@@ -70,8 +70,8 @@ def controller_bench(space, num_layers, device=torch.device('cpu'), skip=True,
     best_reward = -100000
     start = time.time()
     agent = ctrl.Agent(space, num_layers, batch_size,
-        lr=lr, device=device, skip=skip)
-    target = get_target(space, num_layers, skip)
+        lr=lr, device=device, non_linear=non_linear)
+    target = get_target(space, num_layers, non_linear)
     reward_history = []
     for e in range(max_epochs):
         # if e == 100:

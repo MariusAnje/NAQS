@@ -16,6 +16,14 @@ QUAN_SPACE = {
 
 CLOCK_FREQUENCY = 100e6
 
+N_NODES = 10
+
+CIRCUIT_SPACE = {
+    "choices": tuple(range(N_NODES * 2 + 2)),
+    }
+
+
+
 
 if __name__ == '__main__':
     print("architecture space: ", ARCH_SPACE)

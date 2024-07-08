@@ -12,17 +12,17 @@ num_layers = 2
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, para_num_choices, para_num_layers):
+    def __init__(self, para_num_choices, para_repeat):
         super(PolicyNetwork, self).__init__()
         self.para_num_choices = para_num_choices
         self.num_paras_per_layer = len(para_num_choices)
-        self.para_num_layers = para_num_layers
-        self.seq_len = self.num_paras_per_layer * self.para_num_layers
+        self.para_repeat = para_repeat
+        self.seq_len = self.num_paras_per_layer * self.para_repeat
         self.rnn = nn.LSTM(
             input_size=input_size,
             hidden_size=hidden_size,
             num_layers=num_layers)
-        for i in range(self.para_num_layers):
+        for i in range(self.para_repeat):
             setattr(self, 'embedding_{}_x'.format(i),
                     nn.Embedding(self.para_num_choices[-1], input_size))
             for k in range(i-1):
@@ -81,18 +81,18 @@ class Sigmoid(nn.Module):
 
 
 class Agent():
-    def __init__(self, para_space, para_num_layers, batch_size=5, lr=0.5,
+    def __init__(self, para_space, para_repeat, batch_size=5, lr=0.5,
                  device=torch.device('cpu')):
         self.para_space = para_space
-        self.para_num_layers = para_num_layers
+        self.para_repeat = para_repeat
         self.num_paras_per_layer = len(self.para_space)
         self.para_names, self.para_values = zip(*self.para_space.items())
-        self.seq_len = self.num_paras_per_layer * para_num_layers
+        self.seq_len = self.num_paras_per_layer * para_repeat
         self.device = device
         self.batch_size = batch_size
 
         self.model = PolicyNetwork(tuple(len(v) for v in self.para_values),
-                                   para_num_layers).to(device)
+                                   para_repeat).to(device)
         self.optimizer = optim.SGD(self.model.parameters(), lr)
         self.optimizer = optim.Adam(self.model.parameters(), 0.005)
         self.initial_h = torch.randn(num_layers, 1, hidden_size).to(device)
@@ -112,7 +112,7 @@ class Agent():
         rollout = []
         hj_list = []
         with torch.no_grad():
-            for i in range(self.para_num_layers):
+            for i in range(self.para_repeat):
                 sigmoids, hi, state = self.model.sample_anchor(
                     x, state, layer_index=i, hj_list=hj_list)
                 hj_list.append(hi)
@@ -149,7 +149,7 @@ class Agent():
             )
         logits = []
         hj_list = []
-        for i in range(self.para_num_layers):
+        for i in range(self.para_repeat):
             sigmoids, hi, state = self.model.sample_anchor(
                 x[i*(self.num_paras_per_layer+1)], state,
                 layer_index=i, hj_list=hj_list)
@@ -167,7 +167,7 @@ class Agent():
         reward_list = \
             torch.tensor(self.reward_buffer).unsqueeze(-1).to(self.device)
         E = torch.zeros(self.batch_size, 1).to(self.device)
-        for i in range(self.para_num_layers):
+        for i in range(self.para_repeat):
             sigmoids = logits[i * (self.num_paras_per_layer+1)]
             sig_actions = rollout_list[i * (self.num_paras_per_layer+1)]
             for sig, a in zip(sigmoids, sig_actions.t()):
@@ -269,9 +269,9 @@ def encode_rollouts(rollout_buffer):
     return out_buffer
 
 
-def get_agent(para_space, para_num_layers, batch_size=5,
+def get_agent(para_space, para_repeat, batch_size=5,
               device=torch.device('cpu')):
-    return Agent(para_space, para_num_layers, batch_size, device)
+    return Agent(para_space, para_repeat, batch_size, device)
 
 
 if __name__ == '__main__':
@@ -282,4 +282,4 @@ if __name__ == '__main__':
     from config import ARCH_SPACE, QUAN_SPACE
     from controller_bench import controller_bench
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    controller_bench({**ARCH_SPACE, **QUAN_SPACE}, 6, device, skip=True, epochs=300)
+    controller_bench({**ARCH_SPACE, **QUAN_SPACE}, 6, device, non_linear=True, epochs=300)

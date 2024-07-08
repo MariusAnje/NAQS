@@ -1,5 +1,6 @@
 import logging
 from config import ARCH_SPACE, QUAN_SPACE
+import heapq
 
 
 def get_logger(filepath=None):
@@ -56,23 +57,41 @@ def combine_rollout(arch_rollout, quan_rollout, num_layers):
     return result
 
 
+# class BestSamples(object):
+#     def __init__(self, length=5):
+#         self.length = length
+#         self.id_list = list(range(1, self.length+1))
+#         self.rollout_list = [[]] * self.length
+#         self.reward_list = [-1] * self.length
+
+#     def register(self, id, rollout, reward):
+#         for i in range(self.length):
+#             if reward > self.reward_list[i]:
+#                 self.reward_list[i] = reward
+#                 self.id_list[i] = id
+#                 self.rollout_list[i] = rollout
+#                 break
+
+#     def __repr__(self):
+#         return str(dict(zip(self.id_list, self.reward_list)))
+
 class BestSamples(object):
     def __init__(self, length=5):
         self.length = length
-        self.id_list = list(range(1, self.length+1))
-        self.rollout_list = [[]] * self.length
-        self.reward_list = [-1] * self.length
-
+        self.scores = []
+        
+    
     def register(self, id, rollout, reward):
-        for i in range(self.length):
-            if reward > self.reward_list[i]:
-                self.reward_list[i] = reward
-                self.id_list[i] = id
-                self.rollout_list[i] = rollout
-                break
+        if len(self.scores) < self.length:
+            heapq.heappush(self.scores, [reward, id, rollout])
+        else:
+            heapq.heappushpop(self.scores, [reward, id, rollout])
+    
+    def best_reward(self):
+        return self.scores[-1]
 
     def __repr__(self):
-        return str(dict(zip(self.id_list, self.reward_list)))
+        return str(dict(zip([s[1] for s in self.scores[::-1]], [s[0] for s in self.scores[::-1]])))
 
 
 
