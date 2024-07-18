@@ -11,23 +11,35 @@ num_layers = 2
 
 
 class PolicyNetwork(nn.Module):
-    def __init__(self, para_num_choices, para_repeat):
+    def __init__(self, para_choices_start, para_choices_layer, para_repeat):
         super(PolicyNetwork, self).__init__()
-        self.para_num_choices = para_num_choices
-        self.num_paras_per_layer = len(para_num_choices)
+        self.para_starts = para_choices_start
+        self.num_paras_start = len(self.para_starts)
+        self.para_num_choices = para_choices_layer
+        self.num_paras_per_layer = len(self.para_num_choices)
         self.para_repeat = para_repeat
         self.seq_len = self.num_paras_per_layer * self.para_repeat
         self.rnn = nn.LSTM(
             input_size=input_size,
             hidden_size=hidden_size,
             num_layers=num_layers)
+        for i in range(self.num_paras_start):
+            setattr(self, 'embedding_{}_{}'.format(0, i),
+                    nn.Embedding(self.para_starts[(i-1) % self.num_paras_start], input_size)
+                    )
+            setattr(self, 'classifier{}_{}'.format(0, i),
+                    nn.Linear(
+                        hidden_size,
+                        self.para_num_choices[i]
+                        )
+                    )
         for i in range(self.para_repeat):
             for j in range(self.num_paras_per_layer):
-                setattr(self, 'embedding_{}_{}'.format(i, j),
+                setattr(self, 'embedding_{}_{}'.format(i+1, j),
                         nn.Embedding(self.para_num_choices[
                             (j-1) % self.num_paras_per_layer], input_size)
                         )
-                setattr(self, 'classifier{}_{}'.format(i, j),
+                setattr(self, 'classifier{}_{}'.format(i+1, j),
                         nn.Linear(
                             hidden_size,
                             self.para_num_choices[j]
@@ -47,10 +59,15 @@ class PolicyNetwork(nn.Module):
     def forward(self, x, state):
         # the element shape of x is 1 x batch_size
         unscaled_logits = []
+        for i in range(self.num_paras_start):
+            y, state = self.sample(
+                x[i], state, 0, i)
+            # the shape of y is 1 x batch_size x num_values
+            unscaled_logits.append(y)
         for i in range(self.para_repeat):
             for j in range(self.num_paras_per_layer):
                 y, state = self.sample(
-                    x[i*self.num_paras_per_layer + j], state, i, j)
+                    x[self.num_paras_start + i*self.num_paras_per_layer + j], state, i+1, j)
                 # the shape of y is 1 x batch_size x num_values
                 unscaled_logits.append(y)
         return unscaled_logits
@@ -59,22 +76,26 @@ class PolicyNetwork(nn.Module):
 class Agent():
     def __init__(self, para_space, para_repeat, batch_size=5, lr=0.5,
                  device=torch.device('cpu')):
-        self.para_space = para_space
+        self.para_space_start = para_space["start"]
+        self.para_space_layer = para_space["layer"]
         self.para_repeat = para_repeat
-        self.num_paras_per_layer = len(self.para_space)
-        self.para_names, self.para_values = zip(*self.para_space.items())
+        self.num_paras_start = len(self.para_space_start)
+        self.para_names_start, self.para_values_start = zip(*self.para_space_start.items())
+        self.num_paras_per_layer = len(self.para_space_layer)
+        self.para_names_layer, self.para_values_layer = zip(*self.para_space_layer.items())
         self.seq_len = self.num_paras_per_layer * para_repeat
         self.device = device
         self.batch_size = batch_size
 
-        self.model = PolicyNetwork(tuple(len(v) for v in self.para_values),
-                                   para_repeat).to(device)
-        self.optimizer = optim.SGD(self.model.parameters(), lr, momentum=0.9)
+        self.model = PolicyNetwork( tuple(len(v) for v in self.para_values_start),
+                                    tuple(len(v) for v in self.para_values_layer),
+                                    para_repeat).to(device)
+        self.optimizer = optim.SGD(self.model.parameters(), lr)
         # self.optimizer = optim.RMSprop(self.model.parameters(), 0.005)
         self.initial_h = torch.randn(num_layers, 1, hidden_size).to(device)
         self.initial_c = torch.randn(num_layers, 1, hidden_size).to(device)
         self.initial_input = torch.randint(
-            len(self.para_values[-1]), (1, 1)
+            len(self.para_values_layer[-1]), (1, 1)
             ).to(device)
         self.rollout_buffer = []
         self.reward_buffer = []
@@ -87,15 +108,21 @@ class Agent():
         state = (self.initial_h, self.initial_c)
         rollout = []
         with torch.no_grad():
+            for i in range(self.num_paras_start):
+                x, state = self.model.sample(x, state, 0, i)
+                pi = F.softmax(torch.squeeze(x, dim=0), dim=-1)
+                action = torch.multinomial(pi, 1)
+                x = action
+                rollout.append(action.item())
             for i in range(self.para_repeat):
                 for j in range(self.num_paras_per_layer):
-                    x, state = self.model.sample(x, state, i, j)
+                    x, state = self.model.sample(x, state, i+1, j)
                     pi = F.softmax(torch.squeeze(x, dim=0), dim=-1)
                     action = torch.multinomial(pi, 1)
                     x = action
                     rollout.append(action.item())
-        # return rollout, self._format_rollout(rollout)
-        return rollout, 0
+        return rollout, self._format_rollout(rollout)
+        # return rollout, 0
 
     def forward(self):
         rollout_list = [torch.tensor(v).to(self.device)
@@ -107,10 +134,16 @@ class Agent():
             self.initial_c.repeat(1, self.batch_size, 1)
             )
         logits = []
+
+        for i in range(self.num_paras_start):
+            y, state = self.model.sample(
+                x[i], state, 0, i)
+            logits.append(F.softmax(y, dim=-1))
+        
         for i in range(self.para_repeat):
             for j in range(self.num_paras_per_layer):
                 y, state = self.model.sample(
-                    x[i * self.num_paras_per_layer + j], state, i, j)
+                    x[self.num_paras_start + i * self.num_paras_per_layer + j], state, i+1, j)
                 logits.append(F.softmax(y, dim=-1))
         return logits
 
@@ -120,11 +153,17 @@ class Agent():
         reward_list = \
             torch.tensor(self.reward_buffer).unsqueeze(-1).to(self.device)
         E = torch.zeros(self.batch_size, 1).to(self.device)
+
+        for i in range(self.num_paras_start):
+            logit = logits[i].squeeze(0)
+            prob = torch.gather(logit, -1, rollout_list[i].unsqueeze(-1))
+            E += torch.log(prob)
+
         for i in range(self.para_repeat):
             for j in range(self.num_paras_per_layer):
-                logit = logits[i * self.num_paras_per_layer + j].squeeze(0)
+                logit = logits[self.num_paras_start + i * self.num_paras_per_layer + j].squeeze(0)
                 prob = torch.gather(logit, -1, rollout_list[
-                    i * self.num_paras_per_layer + j].unsqueeze(-1))
+                    self.num_paras_start + i * self.num_paras_per_layer + j].unsqueeze(-1))
                 E += torch.log(prob)
         E = (E * reward_list).sum()
         if getattr(self, 'optimizer', None) is None:
@@ -148,7 +187,7 @@ class Agent():
         self.rollout_buffer.clear()
         self.reward_buffer.clear()
         self.initial_input = torch.randint_like(
-            self.initial_input, len(self.para_values[-1]))
+            self.initial_input, len(self.para_values_layer[-1]))
         self.initial_h = torch.randn_like(self.initial_h)
         self.initial_c = torch.randn_like(self.initial_c)
         return
@@ -173,13 +212,20 @@ class Agent():
     def _format_rollout(self, actions):
         paras = []
         layer_paras = {}
+        start_paras = {}
         for i, v in enumerate(actions):
-            para_index = i % self.num_paras_per_layer
-            layer_paras[self.para_names[para_index]] = \
-                self.para_values[para_index][v]
-            if (i+1) % self.num_paras_per_layer == 0:
-                paras.append(layer_paras)
-                layer_paras = {}
+            if i < self.num_paras_start:
+                start_paras[self.para_names_start[i]] = self.para_values_start[i][v]
+            if i == self.num_paras_start:
+                paras.append(start_paras)
+            if i >= self.num_paras_start:
+                j = i - self.num_paras_start
+                para_index = j % self.num_paras_per_layer
+                layer_paras[self.para_names_layer[para_index]] = \
+                    self.para_values_layer[para_index][v]
+                if (j+1) % self.num_paras_per_layer == 0:
+                    paras.append(layer_paras)
+                    layer_paras = {}
         return paras
 
     def adjust_learning_rate(self, lr):

@@ -22,6 +22,20 @@ CIRCUIT_SPACE = {
     "choices": tuple(range(N_NODES * 2 + 2)),
     }
 
+START = {
+    "mult": tuple(range(10)),
+}
+
+LAYER = {
+    "filter": (3, 5, 7),
+    "channel": (24, 36, 48, 64),
+}
+
+NEW_CHOICE = {
+    "start": START,
+    "layer": LAYER,
+
+}
 
 
 

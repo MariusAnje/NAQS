@@ -7,12 +7,11 @@ import time
 import torch
 
 from controller import Agent
-from config import ARCH_SPACE, QUAN_SPACE, CLOCK_FREQUENCY
+from config import ARCH_SPACE, QUAN_SPACE, CLOCK_FREQUENCY, NEW_CHOICE
 from utility import BestSamples
 import utility
 import numpy as np
-from circuits import Multiplier
-import circuit_utils
+from tqdm import tqdm
 
 
 # def get_args():
@@ -26,9 +25,16 @@ parser.add_argument(
 parser.add_argument(
     '-ep', '--episodes',
     type=int,
-    default=2000,
+    default=200,
     help='''the number of episodes for training the policy network, default
         is 2000'''
+    )
+parser.add_argument(
+    '-e', '--epochs',
+    type=int,
+    default=100,
+    help='''the number of epochs for training each DNN model, default
+        is 100'''
     )
 parser.add_argument(
     '-lr', '--learning_rate',
@@ -113,26 +119,30 @@ def nas(device, dir='experiment'):
     logger.info(f"number of layers: \t\t\t {args.layers}")
     logger.info(f"architecture space: ")
 
-    # NODE_SPACE = {"nodes": tuple(range(args.nodes * 2 + 2))}
-    # agent = Agent(NODE_SPACE, args.layers * args.nodes * 2,
-    #               lr=args.learning_rate,
-    #               device=torch.device('cpu'), non_linear=args.skip)
-    circuit = Multiplier(2, 1, args.nodes, args.layers)
-    agent = circuit.generate_agent(lr=args.learning_rate)
+    NODE_SPACE = NEW_CHOICE
+    agent = Agent(NODE_SPACE, args.layers,
+                  lr=args.learning_rate,
+                  device=torch.device('cpu'))
 
     arch_id, total_time = 0, 0
     logger.info('=' * 50 + "Start exploring architecture space" + '=' * 50)
     logger.info('-' * len("Start exploring architecture space"))
 
     best_samples = BestSamples(5)
+    # for e in tqdm(range(args.episodes)):
     for e in range(args.episodes):
         arch_id += 1
         start = time.time()
         arch_rollout, arch_paras = agent.rollout()
-        # logger.info("Sample Architecture ID: {}, Sampled actions: {}".format(
-        #             arch_id, arch_rollout))
-        arch_reward = circuit.rollout_to_reward(arch_rollout)
-        arch_reward = arch_reward[0]
+
+        # model = create_model_from_rollout(arch_rollout[0:])
+        # train_model(args.epochs)
+        # multiplier = create_multiplier_from_rollout(arch_rollout[0])
+        # accuracy = get_accuracy(model, multiplier)
+        # latency, energy, power = get_hardware(model, multipler)
+        # arch_reward = alpha * accuracy - beta * latency - gamma * energy - theta * power
+
+        arch_reward = np.sum(arch_rollout) # something need to be replaced, this one just lets the code run
         agent.store_rollout(arch_rollout, arch_reward)
         end = time.time()
         ep_time = end - start
@@ -142,9 +152,9 @@ def nas(device, dir='experiment'):
                     f"Elasped time: {ep_time}, " +
                     f"Average time: {total_time/(e+1)}")
         b_reward = best_samples.best_reward()
-        # logger.info(f"Best Reward: {b_reward[0]}, " +
-        #             f"ID: {b_reward[1]}, " +
-        #             f"Rollout: {b_reward[2]}")
+        logger.info(f"Best Reward: {b_reward[0]}, " +
+                    f"ID: {b_reward[1]}, " +
+                    f"Rollout: {b_reward[2]}")
         logger.info('-' * len("Start exploring architecture space"))
     logger.info(
         '=' * 50 + "Architecture sapce exploration finished" + '=' * 50)
@@ -153,11 +163,7 @@ def nas(device, dir='experiment'):
 
     b_reward = best_samples.best_reward()
     arch_rollout = b_reward[2]
-    output = circuit.prop(arch_rollout)
-    output = circuit.output_process(output)
-    output_num = circuit_utils.bin_to_dec(output)
-    print(output_num)
-    print(circuit.ground_truth)
+    # print(arch_rollout)
 
 if __name__ == '__main__':
     import random
