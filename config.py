@@ -16,12 +16,6 @@ QUAN_SPACE = {
 
 CLOCK_FREQUENCY = 100e6
 
-N_NODES = 10
-
-CIRCUIT_SPACE = {
-    "choices": tuple(range(N_NODES * 2 + 2)),
-    }
-
 START = {
     "mult": tuple(range(10)),
 }

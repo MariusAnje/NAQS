@@ -1,5 +1,4 @@
 import argparse
-import csv
 import logging
 import os
 import time
@@ -54,11 +53,6 @@ parser.add_argument(
     help="in single gpu mode the id of the gpu used, default is 0"
     )
 parser.add_argument(
-    '-k', '--skip',
-    action='store_true',
-    help="include skip connection in the architecture, default is false"
-    )
-parser.add_argument(
     '-m', '--multi-gpu',
     action='store_true',
     help="use all gpus available, default false"
@@ -69,12 +63,6 @@ parser.add_argument(
     choices=range(3),
     default=0,
     help="verbosity level: 0 (default), 1 and 2 with 2 being the most verbose"
-    )
-parser.add_argument(
-    '-n', '--nodes',
-    type=int,
-    default=10,
-    help="number of nodes"
     )
 args = parser.parse_args()
 
@@ -111,18 +99,16 @@ def nas(device, dir='experiment'):
     filepath = os.path.join(dir, f"{time.time()}")
     logger = get_logger(filepath)
     logger.info(f"INFORMATION")
-    logger.info(f"skip connection: \t\t\t {args.skip}")
     logger.info(f"controller learning rate: \t\t {args.learning_rate}")
     logger.info(f"architecture episodes: \t\t\t {args.episodes}")
     logger.info(f"using multi gpus: \t\t\t {args.multi_gpu}")
-    logger.info(f"number of nodes: \t\t\t {args.nodes}")
     logger.info(f"number of layers: \t\t\t {args.layers}")
-    logger.info(f"architecture space: ")
+    # logger.info(f"architecture space: ")
 
-    NODE_SPACE = NEW_CHOICE
+    NODE_SPACE = NEW_CHOICE # get configuration from config.py
     agent = Agent(NODE_SPACE, args.layers,
                   lr=args.learning_rate,
-                  device=torch.device('cpu'))
+                  device=torch.device('cpu')) # initialize the RL controller
 
     arch_id, total_time = 0, 0
     logger.info('=' * 50 + "Start exploring architecture space" + '=' * 50)
@@ -133,8 +119,25 @@ def nas(device, dir='experiment'):
     for e in range(args.episodes):
         arch_id += 1
         start = time.time()
-        arch_rollout, arch_paras = agent.rollout()
+        arch_rollout, arch_paras = agent.rollout() # in each episode, the controller generate on design
+        """
+            arch_rollout is a list, arch_paras is a human readable version of it.
+            arch_rollout = [a list as the same len of START] + [a list as the same len of LAYER * number of LAYERS]
+            In our settings, START is a one-element dictionary, having only the selection of multipliers
+            LAYER is a two-element dictionary, having the selection of filters and channels
+            If we have a 6-layer model, len(arch_rollout) = 1 + 6 * 2 = 13
+        """
+        # print(arch_paras), print("length of arch_rollout:", len(arch_rollout)), exit() # you may uncomment this line to learn about how it looks like.
 
+
+        """
+            TODO:
+            1. create_model_from_rollout(): create a DNN model.
+            2. train_model(): train the created model.
+            3. create_multiplier_from_rollout(): create (or fetch) a multiplier.
+            4. get_accuracy(): inference the model with the multiplier and get accuracy.
+            5. get_hardware(): inference the model with the multiplier and get latency, energy, and power.
+        """
         # model = create_model_from_rollout(arch_rollout[0:])
         # train_model(args.epochs)
         # multiplier = create_multiplier_from_rollout(arch_rollout[0])
@@ -143,6 +146,7 @@ def nas(device, dir='experiment'):
         # arch_reward = alpha * accuracy - beta * latency - gamma * energy - theta * power
 
         arch_reward = np.sum(arch_rollout) # something need to be replaced, this one just lets the code run
+        
         agent.store_rollout(arch_rollout, arch_reward)
         end = time.time()
         ep_time = end - start

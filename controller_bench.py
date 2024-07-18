@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import random
 import time
 import torch
-from fpga.model import FPGAModel
 import utility
 
 
